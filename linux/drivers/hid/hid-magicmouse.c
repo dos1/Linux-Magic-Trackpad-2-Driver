@@ -53,6 +53,14 @@ static bool report_undeciphered;
 module_param(report_undeciphered, bool, 0644);
 MODULE_PARM_DESC(report_undeciphered, "Report undeciphered multi-touch state field using a MSC_RAW event");
 
+static unsigned int feedback_click = 0x060617;
+module_param(feedback_click, uint, 0644);
+MODULE_PARM_DESC(feedback_click, "Feedback configuration for the click event");
+
+static unsigned int feedback_release = 0x000014;
+module_param(feedback_release, uint, 0644);
+MODULE_PARM_DESC(feedback_release, "Feedback configuration for the release event");
+
 #define TRACKPAD_REPORT_ID 0x28
 #define TRACKPAD2_USB_REPORT_ID 0x02
 #define TRACKPAD2_BT_REPORT_ID 0x31
@@ -411,6 +419,45 @@ static int magicmouse_raw_event(struct hid_device *hdev,
 	return 1;
 }
 
+static int magicmouse_setup_feedback(struct hid_device *hdev,
+	const struct hid_device_id *id)
+{
+	const u8 mt2_click[] = {0xF2, 0x22, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
+	const u8 mt2_release[] = {0xF2, 0x23, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
+
+	u8 *buf;
+
+	if (id->product == USB_DEVICE_ID_APPLE_MAGICTRACKPAD2) {
+		if (id->vendor == BT_VENDOR_ID_APPLE) {
+			buf = kmemdup(mt2_click, sizeof(mt2_click), GFP_KERNEL);
+			if (!buf) {
+				return -ENOMEM;
+			}
+			buf[3] = (u8)(feedback_click >> 0);
+			buf[6] = (u8)(feedback_click >> 8);
+			buf[11] = (u8)(feedback_click >> 16);
+			hid_hw_raw_request(hdev, buf[0], buf, sizeof(mt2_click),
+						HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+			kfree(buf);
+
+			buf = kmemdup(mt2_release, sizeof(mt2_release), GFP_KERNEL);
+			if (!buf) {
+				return -ENOMEM;
+			}
+			buf[3] = (u8)(feedback_release >> 0);
+			buf[6] = (u8)(feedback_release >> 8);
+			buf[11] = (u8)(feedback_release >> 16);
+			hid_hw_raw_request(hdev, buf[0], buf, sizeof(mt2_release),
+						HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+			kfree(buf);
+		} else { /* USB_VENDOR_ID_APPLE */
+			// TODO: should send the same messages as via bluetooth, but without the first byte (0xF2)
+			// and not via HID, but via URB_CONTROL
+		}
+	}
+	return 0;
+}
+
 static int magicmouse_setup_input(struct input_dev *input, struct hid_device *hdev)
 {
 	int error;
@@ -585,8 +632,6 @@ static int magicmouse_probe(struct hid_device *hdev,
 	const u8 feature_mt[] = { 0xD7, 0x01 };
 	const u8 feature_mt_trackpad2_usb[] = { 0x02, 0x01 };
 	const u8 feature_mt_trackpad2_bt[] = { 0xF1, 0x02, 0x01 };
-	const u8 feature_silent_mode_click[] = {0xF2, 0x22, 0x01, 0x10, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
-	const u8 feature_silent_mode_release[] = {0xF2, 0x23, 0x01, 0x08, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
 
 	u8 *buf;
 	struct magicmouse_sc *msc;
@@ -687,24 +732,7 @@ static int magicmouse_probe(struct hid_device *hdev,
 		goto err_stop_hw;
 	}
 
-	buf = kmemdup(feature_silent_mode_click, sizeof(feature_silent_mode_click), GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto err_stop_hw;
-	}
-	ret = hid_hw_raw_request(hdev, buf[0], buf, sizeof(feature_silent_mode_click),
-				HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
-	kfree(buf);
-
-	buf = kmemdup(feature_silent_mode_release, sizeof(feature_silent_mode_release), GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto err_stop_hw;
-	}
-	ret = hid_hw_raw_request(hdev, buf[0], buf, sizeof(feature_silent_mode_release),
-				HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
-	kfree(buf);
-
+	magicmouse_setup_feedback(hdev, id);
 	return 0;
 err_stop_hw:
 	hid_hw_stop(hdev);
