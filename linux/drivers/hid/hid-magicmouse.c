@@ -585,6 +585,9 @@ static int magicmouse_probe(struct hid_device *hdev,
 	const u8 feature_mt[] = { 0xD7, 0x01 };
 	const u8 feature_mt_trackpad2_usb[] = { 0x02, 0x01 };
 	const u8 feature_mt_trackpad2_bt[] = { 0xF1, 0x02, 0x01 };
+	const u8 feature_silent_mode_click[] = {0xF2, 0x22, 0x01, 0x10, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
+	const u8 feature_silent_mode_release[] = {0xF2, 0x23, 0x01, 0x08, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
+
 	u8 *buf;
 	struct magicmouse_sc *msc;
 	struct hid_report *report;
@@ -683,6 +686,24 @@ static int magicmouse_probe(struct hid_device *hdev,
 		hid_err(hdev, "unable to request touch data (%d)\n", ret);
 		goto err_stop_hw;
 	}
+
+	buf = kmemdup(feature_silent_mode_click, sizeof(feature_silent_mode_click), GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto err_stop_hw;
+	}
+	ret = hid_hw_raw_request(hdev, buf[0], buf, sizeof(feature_silent_mode_click),
+				HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+	kfree(buf);
+
+	buf = kmemdup(feature_silent_mode_release, sizeof(feature_silent_mode_release), GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto err_stop_hw;
+	}
+	ret = hid_hw_raw_request(hdev, buf[0], buf, sizeof(feature_silent_mode_release),
+				HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+	kfree(buf);
 
 	return 0;
 err_stop_hw:
