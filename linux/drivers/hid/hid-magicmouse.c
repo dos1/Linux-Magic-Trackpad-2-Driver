@@ -19,7 +19,9 @@
 #include <linux/input/mt.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/usb/input.h>
 
+#include "usbhid/usbhid.h"
 #include "hid-ids.h"
 
 static bool emulate_3button = true;
@@ -425,6 +427,7 @@ static int magicmouse_setup_feedback(struct hid_device *hdev,
 	const u8 mt2_click[] = {0xF2, 0x22, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
 	const u8 mt2_release[] = {0xF2, 0x23, 0x01, 0x00, 0x78, 0x02, 0x00, 0x24, 0x30, 0x06, 0x01, 0x00, 0x18, 0x48, 0x13};
 
+	struct usb_device *usb;
 	u8 *buf;
 
 	if (id->product == USB_DEVICE_ID_APPLE_MAGICTRACKPAD2) {
@@ -451,8 +454,28 @@ static int magicmouse_setup_feedback(struct hid_device *hdev,
 						HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
 			kfree(buf);
 		} else { /* USB_VENDOR_ID_APPLE */
-			// TODO: should send the same messages as via bluetooth, but without the first byte (0xF2)
-			// and not via HID, but via URB_CONTROL
+			usb = hid_to_usb_dev(hdev);
+			buf = kmemdup(mt2_click + 1, sizeof(mt2_click) - sizeof(mt2_click[0]), GFP_KERNEL);
+			if (!buf) {
+				return -ENOMEM;
+			}
+			buf[2] = (u8)(feedback_click >> 0);
+			buf[5] = (u8)(feedback_click >> 8);
+			buf[10] = (u8)(feedback_click >> 16);
+			usb_control_msg(usb, usb_sndctrlpipe(usb, 0), 9, 0x21, 0x0322, 2, buf, sizeof(mt2_click) - sizeof(mt2_click[0]),
+						USB_CTRL_SET_TIMEOUT);
+			kfree(buf);
+
+			buf = kmemdup(mt2_release + 1, sizeof(mt2_release) - sizeof(mt2_release[0]), GFP_KERNEL);
+			if (!buf) {
+				return -ENOMEM;
+			}
+			buf[2] = (u8)(feedback_release >> 0);
+			buf[5] = (u8)(feedback_release >> 8);
+			buf[10] = (u8)(feedback_release >> 16);
+			usb_control_msg(usb, usb_sndctrlpipe(usb, 0), 9, 0x21, 0x0323, 2, buf, sizeof(mt2_release) - sizeof(mt2_release[0]),
+						USB_CTRL_SET_TIMEOUT);
+			kfree(buf);
 		}
 	}
 	return 0;
